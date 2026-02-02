@@ -1,5 +1,6 @@
 import tkinter as tk
 
+
 class Colors:
     BACKGROUND = "#1a1a2e"
     DISPLAY_BG = "#16213e"
