@@ -1,162 +1,490 @@
+"""
+Modern Calculator Application
+=============================
+A professionally designed calculator with a sleek UI, built using Python and Tkinter.
+
+Features:
+- Clean, modern dark-themed interface
+- Full keyboard support for efficient input
+- Calculation history with recall functionality
+- Safe mathematical expression evaluation
+- Smooth hover animations and visual feedback
+
+Author: Gung Febrian
+"""
+
 import tkinter as tk
+from tkinter import font as tkfont
+from dataclasses import dataclass
+from enum import Enum
+from typing import Optional, List, Callable
+import operator
+import re
 
 
-class Colors:
-    BACKGROUND = "#1a1a2e"
-    DISPLAY_BG = "#16213e"
-    DISPLAY_TEXT = "#eef2f5"
-    NUMBER = "#0f3460"
-    NUMBER_HOVER = "#1a4a7a"
-    OPERATOR = "#e94560"
-    OPERATOR_HOVER = "#ff6b6b"
-    EQUALS = "#00d9ff"
-    EQUALS_HOVER = "#5ce1e6"
-    CLEAR = "#ff6b35"
-    CLEAR_HOVER = "#ff8c5a"
-    TEXT_LIGHT = "#ffffff"
+# =============================================================================
+# CONFIGURATION & CONSTANTS
+# =============================================================================
 
+@dataclass(frozen=True)
+class ThemeColors:
+    """Immutable color palette for the calculator theme."""
+    background: str = "#1a1a2e"
+    display_bg: str = "#16213e"
+    display_text: str = "#eef2f5"
+    number_btn: str = "#0f3460"
+    number_hover: str = "#1a4a7a"
+    operator_btn: str = "#e94560"
+    operator_hover: str = "#ff6b6b"
+    equals_btn: str = "#00d9ff"
+    equals_hover: str = "#5ce1e6"
+    clear_btn: str = "#ff6b35"
+    clear_hover: str = "#ff8c5a"
+    text_light: str = "#ffffff"
+    history_bg: str = "#0d1b2a"
+    history_text: str = "#8892b0"
+
+
+class ButtonType(Enum):
+    """Categorizes button types for styling and behavior."""
+    NUMBER = "number"
+    OPERATOR = "operator"
+    EQUALS = "equals"
+    CLEAR = "clear"
+    FUNCTION = "function"
+
+
+# =============================================================================
+# SAFE EXPRESSION EVALUATOR (No eval() - More Secure)
+# =============================================================================
+
+class SafeExpressionEvaluator:
+    """
+    A secure mathematical expression evaluator that doesn't use Python's eval().
+    Supports basic arithmetic operations with proper operator precedence.
+    """
+    
+    OPERATORS: dict[str, Callable[[float, float], float]] = {
+        '+': operator.add,
+        '-': operator.sub,
+        '*': operator.mul,
+        '/': operator.truediv,
+    }
+    
+    PRECEDENCE: dict[str, int] = {'+': 1, '-': 1, '*': 2, '/': 2}
+    
+    @classmethod
+    def evaluate(cls, expression: str) -> float:
+        """
+        Safely evaluate a mathematical expression string.
+        
+        Args:
+            expression: A string containing numbers and operators (e.g., "3+5*2")
+            
+        Returns:
+            The computed result as a float.
+            
+        Raises:
+            ValueError: If the expression is invalid.
+            ZeroDivisionError: If division by zero is attempted.
+        """
+        tokens = cls._tokenize(expression)
+        if not tokens:
+            raise ValueError("Empty expression")
+        return cls._parse_expression(tokens)
+    
+    @classmethod
+    def _tokenize(cls, expression: str) -> List[str]:
+        """Convert expression string into list of tokens (numbers and operators)."""
+        # Handle negative numbers at start or after operators
+        expression = expression.replace(" ", "")
+        tokens: List[str] = []
+        current_number = ""
+        
+        for i, char in enumerate(expression):
+            if char.isdigit() or char == '.':
+                current_number += char
+            elif char in cls.OPERATORS:
+                # Handle negative sign at start or after another operator
+                if char == '-' and (not tokens or tokens[-1] in cls.OPERATORS):
+                    current_number += char
+                else:
+                    if current_number:
+                        tokens.append(current_number)
+                        current_number = ""
+                    tokens.append(char)
+            else:
+                raise ValueError(f"Invalid character: {char}")
+        
+        if current_number:
+            tokens.append(current_number)
+            
+        return tokens
+    
+    @classmethod
+    def _parse_expression(cls, tokens: List[str]) -> float:
+        """Parse tokens using the Shunting Yard algorithm for proper precedence."""
+        output_queue: List[float] = []
+        operator_stack: List[str] = []
+        
+        for token in tokens:
+            if token not in cls.OPERATORS:
+                output_queue.append(float(token))
+            else:
+                while (operator_stack and 
+                       operator_stack[-1] in cls.OPERATORS and
+                       cls.PRECEDENCE[operator_stack[-1]] >= cls.PRECEDENCE[token]):
+                    cls._apply_operator(output_queue, operator_stack.pop())
+                operator_stack.append(token)
+        
+        while operator_stack:
+            cls._apply_operator(output_queue, operator_stack.pop())
+        
+        if len(output_queue) != 1:
+            raise ValueError("Invalid expression")
+            
+        return output_queue[0]
+    
+    @classmethod
+    def _apply_operator(cls, output: List[float], op: str) -> None:
+        """Apply an operator to the top two values in the output queue."""
+        if len(output) < 2:
+            raise ValueError("Invalid expression")
+        b, a = output.pop(), output.pop()
+        output.append(cls.OPERATORS[op](a, b))
+
+
+# =============================================================================
+# CALCULATOR BUTTON COMPONENT
+# =============================================================================
+
+class CalculatorButton:
+    """
+    A styled button component with hover effects and consistent theming.
+    
+    Attributes:
+        widget: The underlying Tkinter Button widget.
+    """
+    
+    def __init__(
+        self,
+        parent: tk.Frame,
+        text: str,
+        button_type: ButtonType,
+        theme: ThemeColors,
+        command: Callable[[], None],
+        row: int,
+        column: int,
+        columnspan: int = 1
+    ) -> None:
+        """
+        Initialize a calculator button.
+        
+        Args:
+            parent: The parent frame widget.
+            text: The button label text.
+            button_type: The type of button (affects styling).
+            theme: The color theme to use.
+            command: The callback function when button is clicked.
+            row: Grid row position.
+            column: Grid column position.
+            columnspan: Number of columns the button spans.
+        """
+        self.theme = theme
+        self.bg_color, self.hover_color = self._get_colors(button_type)
+        
+        self.widget = tk.Button(
+            parent,
+            text=text,
+            font=("SF Pro Display", 22, "bold"),
+            bg=self.bg_color,
+            fg=theme.text_light,
+            activebackground=self.hover_color,
+            activeforeground=theme.text_light,
+            border=0,
+            cursor="hand2",
+            command=command
+        )
+        
+        self.widget.grid(
+            row=row, 
+            column=column, 
+            columnspan=columnspan,
+            padx=3, 
+            pady=3, 
+            sticky="nsew"
+        )
+        
+        self._bind_hover_events()
+    
+    def _get_colors(self, button_type: ButtonType) -> tuple[str, str]:
+        """Get background and hover colors based on button type."""
+        color_map = {
+            ButtonType.NUMBER: (self.theme.number_btn, self.theme.number_hover),
+            ButtonType.OPERATOR: (self.theme.operator_btn, self.theme.operator_hover),
+            ButtonType.EQUALS: (self.theme.equals_btn, self.theme.equals_hover),
+            ButtonType.CLEAR: (self.theme.clear_btn, self.theme.clear_hover),
+            ButtonType.FUNCTION: (self.theme.operator_btn, self.theme.operator_hover),
+        }
+        return color_map.get(button_type, (self.theme.number_btn, self.theme.number_hover))
+    
+    def _bind_hover_events(self) -> None:
+        """Bind mouse enter/leave events for hover effect."""
+        self.widget.bind("<Enter>", lambda e: self.widget.configure(bg=self.hover_color))
+        self.widget.bind("<Leave>", lambda e: self.widget.configure(bg=self.bg_color))
+
+
+# =============================================================================
+# MAIN CALCULATOR APPLICATION
+# =============================================================================
 
 class Calculator:
-    def __init__(self):
+    """
+    A modern calculator application with a sleek UI and advanced features.
+    
+    Features:
+        - Basic arithmetic operations (+, -, ×, ÷)
+        - Percentage and sign toggle functions
+        - Calculation history with recall
+        - Full keyboard support
+        - Safe expression evaluation (no eval())
+    
+    Example:
+        >>> calc = Calculator()
+        >>> calc.run()
+    """
+    
+    # Mapping of display symbols to internal operators
+    SYMBOL_MAP: dict[str, str] = {"÷": "/", "×": "*", "−": "-"}
+    REVERSE_SYMBOL_MAP: dict[str, str] = {v: k for k, v in SYMBOL_MAP.items()}
+    
+    # Keyboard bindings
+    KEY_BINDINGS: dict[str, str] = {
+        "0": "0", "1": "1", "2": "2", "3": "3", "4": "4",
+        "5": "5", "6": "6", "7": "7", "8": "8", "9": "9",
+        ".": ".", "+": "+", "-": "−", "*": "×", "/": "÷",
+        "Return": "=", "equal": "=", "BackSpace": "⌫",
+        "Escape": "C", "c": "C", "Delete": "C",
+        "percent": "%", "p": "%",
+    }
+    
+    def __init__(self, theme: Optional[ThemeColors] = None) -> None:
+        """
+        Initialize the calculator application.
+        
+        Args:
+            theme: Optional custom color theme. Uses default if not provided.
+        """
+        self.theme = theme or ThemeColors()
+        self.current_input: str = ""
+        self.history: List[str] = []
+        self.history_index: int = -1
+        
+        self._setup_window()
+        self._setup_variables()
+        self._create_display()
+        self._create_history_display()
+        self._create_buttons()
+        self._bind_keyboard()
+    
+    def _setup_window(self) -> None:
+        """Configure the main application window."""
         self.window = tk.Tk()
         self.window.title("🧮 Modern Calculator")
-        self.window.geometry("350x500")
+        self.window.geometry("350x550")
         self.window.resizable(False, False)
-        self.window.configure(bg=Colors.BACKGROUND)
+        self.window.configure(bg=self.theme.background)
         
-        self.current_input = ""
-        self.display_text = tk.StringVar()
-        self.display_text.set("0")
+        # Set window icon (if available)
+        try:
+            self.window.iconname("Calculator")
+        except tk.TclError:
+            pass
+    
+    def _setup_variables(self) -> None:
+        """Initialize Tkinter StringVars for display."""
+        self.display_text = tk.StringVar(value="0")
+        self.history_text = tk.StringVar(value="")
+    
+    def _create_display(self) -> None:
+        """Create the main result display area."""
+        display_frame = tk.Frame(
+            self.window, 
+            bg=self.theme.display_bg, 
+            pady=15
+        )
+        display_frame.pack(fill="x", padx=10, pady=(15, 5))
         
-        self._create_display()
-        self._create_buttons()
-        
-    def _create_display(self):
-        display_frame = tk.Frame(self.window, bg=Colors.DISPLAY_BG, pady=20)
-        display_frame.pack(fill="x", padx=10, pady=(20, 10))
-        
-        display_label = tk.Label(
+        self.display_label = tk.Label(
             display_frame,
             textvariable=self.display_text,
-            font=("SF Pro Display", 40, "bold"),
-            bg=Colors.DISPLAY_BG,
-            fg=Colors.DISPLAY_TEXT,
+            font=("SF Pro Display", 42, "bold"),
+            bg=self.theme.display_bg,
+            fg=self.theme.display_text,
             anchor="e",
             padx=20
         )
-        display_label.pack(fill="both", expand=True)
+        self.display_label.pack(fill="both", expand=True)
+    
+    def _create_history_display(self) -> None:
+        """Create the calculation history display."""
+        history_frame = tk.Frame(self.window, bg=self.theme.history_bg)
+        history_frame.pack(fill="x", padx=10, pady=(0, 5))
         
-    def _create_buttons(self):
-        button_frame = tk.Frame(self.window, bg=Colors.BACKGROUND)
+        history_label = tk.Label(
+            history_frame,
+            textvariable=self.history_text,
+            font=("SF Pro Display", 14),
+            bg=self.theme.history_bg,
+            fg=self.theme.history_text,
+            anchor="e",
+            padx=20,
+            pady=5
+        )
+        history_label.pack(fill="both")
+    
+    def _create_buttons(self) -> None:
+        """Create the calculator button grid."""
+        button_frame = tk.Frame(self.window, bg=self.theme.background)
         button_frame.pack(fill="both", expand=True, padx=10, pady=10)
         
-        button_layout = [
-            [("C", Colors.CLEAR, Colors.CLEAR_HOVER),
-             ("±", Colors.OPERATOR, Colors.OPERATOR_HOVER),
-             ("%", Colors.OPERATOR, Colors.OPERATOR_HOVER),
-             ("÷", Colors.OPERATOR, Colors.OPERATOR_HOVER)],
-            [("7", Colors.NUMBER, Colors.NUMBER_HOVER),
-             ("8", Colors.NUMBER, Colors.NUMBER_HOVER),
-             ("9", Colors.NUMBER, Colors.NUMBER_HOVER),
-             ("×", Colors.OPERATOR, Colors.OPERATOR_HOVER)],
-            [("4", Colors.NUMBER, Colors.NUMBER_HOVER),
-             ("5", Colors.NUMBER, Colors.NUMBER_HOVER),
-             ("6", Colors.NUMBER, Colors.NUMBER_HOVER),
-             ("−", Colors.OPERATOR, Colors.OPERATOR_HOVER)],
-            [("1", Colors.NUMBER, Colors.NUMBER_HOVER),
-             ("2", Colors.NUMBER, Colors.NUMBER_HOVER),
-             ("3", Colors.NUMBER, Colors.NUMBER_HOVER),
-             ("+", Colors.OPERATOR, Colors.OPERATOR_HOVER)],
-            [("0", Colors.NUMBER, Colors.NUMBER_HOVER),
-             (".", Colors.NUMBER, Colors.NUMBER_HOVER),
-             ("⌫", Colors.CLEAR, Colors.CLEAR_HOVER),
-             ("=", Colors.EQUALS, Colors.EQUALS_HOVER)],
+        # Define button layout: (text, ButtonType)
+        layout: List[List[tuple[str, ButtonType]]] = [
+            [("C", ButtonType.CLEAR), ("±", ButtonType.FUNCTION), 
+             ("%", ButtonType.FUNCTION), ("÷", ButtonType.OPERATOR)],
+            [("7", ButtonType.NUMBER), ("8", ButtonType.NUMBER), 
+             ("9", ButtonType.NUMBER), ("×", ButtonType.OPERATOR)],
+            [("4", ButtonType.NUMBER), ("5", ButtonType.NUMBER), 
+             ("6", ButtonType.NUMBER), ("−", ButtonType.OPERATOR)],
+            [("1", ButtonType.NUMBER), ("2", ButtonType.NUMBER), 
+             ("3", ButtonType.NUMBER), ("+", ButtonType.OPERATOR)],
+            [("0", ButtonType.NUMBER), (".", ButtonType.NUMBER), 
+             ("⌫", ButtonType.CLEAR), ("=", ButtonType.EQUALS)],
         ]
         
+        # Configure grid weights for responsive layout
         for i in range(5):
             button_frame.grid_rowconfigure(i, weight=1)
         for i in range(4):
             button_frame.grid_columnconfigure(i, weight=1)
         
-        for row_idx, row in enumerate(button_layout):
-            for col_idx, (text, bg_color, hover_color) in enumerate(row):
-                self._create_button(button_frame, text, bg_color, hover_color, row_idx, col_idx)
+        # Create buttons
+        for row_idx, row in enumerate(layout):
+            for col_idx, (text, btn_type) in enumerate(row):
+                CalculatorButton(
+                    parent=button_frame,
+                    text=text,
+                    button_type=btn_type,
+                    theme=self.theme,
+                    command=lambda t=text: self._on_button_click(t),
+                    row=row_idx,
+                    column=col_idx
+                )
     
-    def _create_button(self, parent, text, bg_color, hover_color, row, col):
-        button = tk.Button(
-            parent,
-            text=text,
-            font=("SF Pro Display", 22, "bold"),
-            bg=bg_color,
-            fg=Colors.TEXT_LIGHT,
-            activebackground=hover_color,
-            activeforeground=Colors.TEXT_LIGHT,
-            border=0,
-            cursor="hand2",
-            command=lambda t=text: self._on_button_click(t)
-        )
-        
-        button.grid(row=row, column=col, padx=3, pady=3, sticky="nsew")
-        
-        def on_enter(event):
-            button.configure(bg=hover_color)
-            
-        def on_leave(event):
-            button.configure(bg=bg_color)
-        
-        button.bind("<Enter>", on_enter)
-        button.bind("<Leave>", on_leave)
+    def _bind_keyboard(self) -> None:
+        """Bind keyboard events for quick input."""
+        self.window.bind("<Key>", self._on_key_press)
+        # Bind specific keys that might need special handling
+        self.window.bind("<Return>", lambda e: self._on_button_click("="))
+        self.window.bind("<BackSpace>", lambda e: self._on_button_click("⌫"))
+        self.window.bind("<Escape>", lambda e: self._on_button_click("C"))
+        # History navigation
+        self.window.bind("<Up>", lambda e: self._navigate_history(-1))
+        self.window.bind("<Down>", lambda e: self._navigate_history(1))
     
-    def _on_button_click(self, button_text):
-        if button_text == "C":
-            self._clear()
-        elif button_text == "=":
-            self._calculate()
-        elif button_text == "⌫":
-            self._backspace()
-        elif button_text == "±":
-            self._toggle_sign()
-        elif button_text == "%":
-            self._percentage()
+    def _on_key_press(self, event: tk.Event) -> None:
+        """Handle keyboard input events."""
+        key = event.keysym if len(event.keysym) > 1 else event.char
+        if key in self.KEY_BINDINGS:
+            self._on_button_click(self.KEY_BINDINGS[key])
+        elif key.isdigit():
+            self._on_button_click(key)
+    
+    def _navigate_history(self, direction: int) -> None:
+        """Navigate through calculation history using arrow keys."""
+        if not self.history:
+            return
+        
+        new_index = self.history_index + direction
+        if 0 <= new_index < len(self.history):
+            self.history_index = new_index
+            self.current_input = self.history[self.history_index]
+            self.display_text.set(self.current_input)
+    
+    def _on_button_click(self, button_text: str) -> None:
+        """
+        Handle button click events and route to appropriate handler.
+        
+        Args:
+            button_text: The text/symbol of the clicked button.
+        """
+        handlers: dict[str, Callable[[], None]] = {
+            "C": self._clear,
+            "=": self._calculate,
+            "⌫": self._backspace,
+            "±": self._toggle_sign,
+            "%": self._percentage,
+        }
+        
+        if button_text in handlers:
+            handlers[button_text]()
         else:
             self._append_to_input(button_text)
     
-    def _clear(self):
+    def _clear(self) -> None:
+        """Clear the current input and reset display."""
         self.current_input = ""
         self.display_text.set("0")
+        self.history_text.set("")
+        self.history_index = -1
     
-    def _backspace(self):
+    def _backspace(self) -> None:
+        """Remove the last character from input."""
         self.current_input = self.current_input[:-1]
-        if self.current_input == "":
-            self.display_text.set("0")
+        self.display_text.set(self.current_input if self.current_input else "0")
+    
+    def _toggle_sign(self) -> None:
+        """Toggle the sign of the current number (positive/negative)."""
+        if not self.current_input or self.current_input == "0":
+            return
+        
+        if self.current_input.startswith("-"):
+            self.current_input = self.current_input[1:]
         else:
-            self.display_text.set(self.current_input)
+            self.current_input = "-" + self.current_input
+        
+        self.display_text.set(self.current_input)
     
-    def _toggle_sign(self):
-        if self.current_input and self.current_input != "0":
-            if self.current_input.startswith("-"):
-                self.current_input = self.current_input[1:]
-            else:
-                self.current_input = "-" + self.current_input
-            self.display_text.set(self.current_input)
-    
-    def _percentage(self):
+    def _percentage(self) -> None:
+        """Convert the current value to a percentage (divide by 100)."""
+        if not self.current_input:
+            return
+        
         try:
-            expression = self._prepare_expression()
-            if expression:
-                result = eval(expression) / 100
-                self.current_input = str(result)
-                self.display_text.set(self._format_result(result))
-        except:
+            expression = self._to_internal_format(self.current_input)
+            result = SafeExpressionEvaluator.evaluate(expression) / 100
+            self.current_input = str(result)
+            self.display_text.set(self._format_result(result))
+        except (ValueError, ZeroDivisionError):
             pass
     
-    def _append_to_input(self, char):
+    def _append_to_input(self, char: str) -> None:
+        """
+        Append a character to the current input with validation.
+        
+        Args:
+            char: The character to append (number, operator, or decimal).
+        """
         operators = "÷×−+."
+        
+        # Prevent consecutive operators
         if char in operators and self.current_input:
             if self.current_input[-1] in operators:
                 return
         
+        # Prevent multiple decimal points in same number
         if char == ".":
+            # Get the last number segment
             parts = self.current_input
             for op in "÷×−+":
                 parts = parts.replace(op, " ")
@@ -167,48 +495,81 @@ class Calculator:
         self.current_input += char
         self.display_text.set(self.current_input)
     
-    def _prepare_expression(self):
-        expression = self.current_input
-        expression = expression.replace("÷", "/")
-        expression = expression.replace("×", "*")
-        expression = expression.replace("−", "-")
+    def _to_internal_format(self, expression: str) -> str:
+        """Convert display symbols to internal operator format."""
+        for display_sym, internal_sym in self.SYMBOL_MAP.items():
+            expression = expression.replace(display_sym, internal_sym)
         return expression
     
-    def _calculate(self):
+    def _calculate(self) -> None:
+        """Evaluate the current expression and display the result."""
+        if not self.current_input:
+            return
+        
+        expression = self.current_input
+        internal_expr = self._to_internal_format(expression)
+        
         try:
-            expression = self._prepare_expression()
-            if not expression:
-                return
-            
-            result = eval(expression)
+            result = SafeExpressionEvaluator.evaluate(internal_expr)
             formatted = self._format_result(result)
+            
+            # Update history
+            self.history_text.set(f"{expression} =")
+            self.history.append(expression)
+            self.history_index = len(self.history)
+            
+            # Update display
             self.current_input = str(result)
             self.display_text.set(formatted)
             
         except ZeroDivisionError:
             self.display_text.set("Error: ÷ by 0")
             self.current_input = ""
-        except Exception:
+        except ValueError:
             self.display_text.set("Error")
             self.current_input = ""
     
-    def _format_result(self, result):
-        if isinstance(result, float):
-            if result == int(result):
-                return str(int(result))
-            else:
-                return str(round(result, 8))
-        return str(result)
+    def _format_result(self, result: float) -> str:
+        """
+        Format the calculation result for display.
+        
+        Args:
+            result: The numerical result to format.
+            
+        Returns:
+            A formatted string representation.
+        """
+        # Remove unnecessary decimal places
+        if isinstance(result, float) and result == int(result):
+            return str(int(result))
+        
+        # Limit decimal places for readability
+        formatted = f"{result:.10g}"
+        return formatted
     
-    def run(self):
+    def run(self) -> None:
+        """Start the calculator application and center on screen."""
+        # Wait for window to be drawn
         self.window.update_idletasks()
+        
+        # Calculate center position
         width = self.window.winfo_width()
         height = self.window.winfo_height()
-        x = (self.window.winfo_screenwidth() // 2) - (width // 2)
-        y = (self.window.winfo_screenheight() // 2) - (height // 2)
+        screen_width = self.window.winfo_screenwidth()
+        screen_height = self.window.winfo_screenheight()
+        x = (screen_width // 2) - (width // 2)
+        y = (screen_height // 2) - (height // 2)
+        
+        # Position window
         self.window.geometry(f"{width}x{height}+{x}+{y}")
+        
+        # Start event loop
         self.window.mainloop()
 
+
+# =============================================================================
+# ENTRY POINT
+# =============================================================================
 
 if __name__ == "__main__":
     calculator = Calculator()
