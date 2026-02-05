@@ -1,18 +1,3 @@
-"""
-Modern Calculator Application
-=============================
-A professionally designed calculator with a sleek UI, built using Python and Tkinter.
-
-Features:
-- Clean, modern dark-themed interface
-- Full keyboard support for efficient input
-- Calculation history with recall functionality
-- Safe mathematical expression evaluation
-- Smooth hover animations and visual feedback
-
-Author: Gung Febrian
-"""
-
 import tkinter as tk
 from tkinter import font as tkfont
 from dataclasses import dataclass
@@ -22,13 +7,8 @@ import operator
 import re
 
 
-# =============================================================================
-# CONFIGURATION & CONSTANTS
-# =============================================================================
-
 @dataclass(frozen=True)
 class ThemeColors:
-    """Immutable color palette for the calculator theme."""
     background: str = "#1a1a2e"
     display_bg: str = "#16213e"
     display_text: str = "#eef2f5"
@@ -46,7 +26,6 @@ class ThemeColors:
 
 
 class ButtonType(Enum):
-    """Categorizes button types for styling and behavior."""
     NUMBER = "number"
     OPERATOR = "operator"
     EQUALS = "equals"
@@ -54,16 +33,7 @@ class ButtonType(Enum):
     FUNCTION = "function"
 
 
-# =============================================================================
-# SAFE EXPRESSION EVALUATOR (No eval() - More Secure)
-# =============================================================================
-
 class SafeExpressionEvaluator:
-    """
-    A secure mathematical expression evaluator that doesn't use Python's eval().
-    Supports basic arithmetic operations with proper operator precedence.
-    """
-    
     OPERATORS: dict[str, Callable[[float, float], float]] = {
         '+': operator.add,
         '-': operator.sub,
@@ -75,19 +45,6 @@ class SafeExpressionEvaluator:
     
     @classmethod
     def evaluate(cls, expression: str) -> float:
-        """
-        Safely evaluate a mathematical expression string.
-        
-        Args:
-            expression: A string containing numbers and operators (e.g., "3+5*2")
-            
-        Returns:
-            The computed result as a float.
-            
-        Raises:
-            ValueError: If the expression is invalid.
-            ZeroDivisionError: If division by zero is attempted.
-        """
         tokens = cls._tokenize(expression)
         if not tokens:
             raise ValueError("Empty expression")
@@ -95,8 +52,6 @@ class SafeExpressionEvaluator:
     
     @classmethod
     def _tokenize(cls, expression: str) -> List[str]:
-        """Convert expression string into list of tokens (numbers and operators)."""
-        # Handle negative numbers at start or after operators
         expression = expression.replace(" ", "")
         tokens: List[str] = []
         current_number = ""
@@ -105,7 +60,6 @@ class SafeExpressionEvaluator:
             if char.isdigit() or char == '.':
                 current_number += char
             elif char in cls.OPERATORS:
-                # Handle negative sign at start or after another operator
                 if char == '-' and (not tokens or tokens[-1] in cls.OPERATORS):
                     current_number += char
                 else:
@@ -123,7 +77,6 @@ class SafeExpressionEvaluator:
     
     @classmethod
     def _parse_expression(cls, tokens: List[str]) -> float:
-        """Parse tokens using the Shunting Yard algorithm for proper precedence."""
         output_queue: List[float] = []
         operator_stack: List[str] = []
         
@@ -147,25 +100,13 @@ class SafeExpressionEvaluator:
     
     @classmethod
     def _apply_operator(cls, output: List[float], op: str) -> None:
-        """Apply an operator to the top two values in the output queue."""
         if len(output) < 2:
             raise ValueError("Invalid expression")
         b, a = output.pop(), output.pop()
         output.append(cls.OPERATORS[op](a, b))
 
 
-# =============================================================================
-# CALCULATOR BUTTON COMPONENT
-# =============================================================================
-
 class CalculatorButton:
-    """
-    A styled button component with hover effects and consistent theming.
-    
-    Attributes:
-        widget: The underlying Tkinter Button widget.
-    """
-    
     def __init__(
         self,
         parent: tk.Frame,
@@ -177,19 +118,6 @@ class CalculatorButton:
         column: int,
         columnspan: int = 1
     ) -> None:
-        """
-        Initialize a calculator button.
-        
-        Args:
-            parent: The parent frame widget.
-            text: The button label text.
-            button_type: The type of button (affects styling).
-            theme: The color theme to use.
-            command: The callback function when button is clicked.
-            row: Grid row position.
-            column: Grid column position.
-            columnspan: Number of columns the button spans.
-        """
         self.theme = theme
         self.bg_color, self.hover_color = self._get_colors(button_type)
         
@@ -218,7 +146,6 @@ class CalculatorButton:
         self._bind_hover_events()
     
     def _get_colors(self, button_type: ButtonType) -> tuple[str, str]:
-        """Get background and hover colors based on button type."""
         color_map = {
             ButtonType.NUMBER: (self.theme.number_btn, self.theme.number_hover),
             ButtonType.OPERATOR: (self.theme.operator_btn, self.theme.operator_hover),
@@ -229,36 +156,14 @@ class CalculatorButton:
         return color_map.get(button_type, (self.theme.number_btn, self.theme.number_hover))
     
     def _bind_hover_events(self) -> None:
-        """Bind mouse enter/leave events for hover effect."""
         self.widget.bind("<Enter>", lambda e: self.widget.configure(bg=self.hover_color))
         self.widget.bind("<Leave>", lambda e: self.widget.configure(bg=self.bg_color))
 
 
-# =============================================================================
-# MAIN CALCULATOR APPLICATION
-# =============================================================================
-
 class Calculator:
-    """
-    A modern calculator application with a sleek UI and advanced features.
-    
-    Features:
-        - Basic arithmetic operations (+, -, ×, ÷)
-        - Percentage and sign toggle functions
-        - Calculation history with recall
-        - Full keyboard support
-        - Safe expression evaluation (no eval())
-    
-    Example:
-        >>> calc = Calculator()
-        >>> calc.run()
-    """
-    
-    # Mapping of display symbols to internal operators
     SYMBOL_MAP: dict[str, str] = {"÷": "/", "×": "*", "−": "-"}
     REVERSE_SYMBOL_MAP: dict[str, str] = {v: k for k, v in SYMBOL_MAP.items()}
     
-    # Keyboard bindings
     KEY_BINDINGS: dict[str, str] = {
         "0": "0", "1": "1", "2": "2", "3": "3", "4": "4",
         "5": "5", "6": "6", "7": "7", "8": "8", "9": "9",
@@ -269,12 +174,6 @@ class Calculator:
     }
     
     def __init__(self, theme: Optional[ThemeColors] = None) -> None:
-        """
-        Initialize the calculator application.
-        
-        Args:
-            theme: Optional custom color theme. Uses default if not provided.
-        """
         self.theme = theme or ThemeColors()
         self.current_input: str = ""
         self.history: List[str] = []
@@ -288,26 +187,22 @@ class Calculator:
         self._bind_keyboard()
     
     def _setup_window(self) -> None:
-        """Configure the main application window."""
         self.window = tk.Tk()
         self.window.title("🧮 Modern Calculator")
         self.window.geometry("350x550")
         self.window.resizable(False, False)
         self.window.configure(bg=self.theme.background)
         
-        # Set window icon (if available)
         try:
             self.window.iconname("Calculator")
         except tk.TclError:
             pass
     
     def _setup_variables(self) -> None:
-        """Initialize Tkinter StringVars for display."""
         self.display_text = tk.StringVar(value="0")
         self.history_text = tk.StringVar(value="")
     
     def _create_display(self) -> None:
-        """Create the main result display area."""
         display_frame = tk.Frame(
             self.window, 
             bg=self.theme.display_bg, 
@@ -327,7 +222,6 @@ class Calculator:
         self.display_label.pack(fill="both", expand=True)
     
     def _create_history_display(self) -> None:
-        """Create the calculation history display."""
         history_frame = tk.Frame(self.window, bg=self.theme.history_bg)
         history_frame.pack(fill="x", padx=10, pady=(0, 5))
         
@@ -344,11 +238,9 @@ class Calculator:
         history_label.pack(fill="both")
     
     def _create_buttons(self) -> None:
-        """Create the calculator button grid."""
         button_frame = tk.Frame(self.window, bg=self.theme.background)
         button_frame.pack(fill="both", expand=True, padx=10, pady=10)
         
-        # Define button layout: (text, ButtonType)
         layout: List[List[tuple[str, ButtonType]]] = [
             [("C", ButtonType.CLEAR), ("±", ButtonType.FUNCTION), 
              ("%", ButtonType.FUNCTION), ("÷", ButtonType.OPERATOR)],
@@ -362,13 +254,11 @@ class Calculator:
              ("⌫", ButtonType.CLEAR), ("=", ButtonType.EQUALS)],
         ]
         
-        # Configure grid weights for responsive layout
         for i in range(5):
             button_frame.grid_rowconfigure(i, weight=1)
         for i in range(4):
             button_frame.grid_columnconfigure(i, weight=1)
         
-        # Create buttons
         for row_idx, row in enumerate(layout):
             for col_idx, (text, btn_type) in enumerate(row):
                 CalculatorButton(
@@ -382,18 +272,14 @@ class Calculator:
                 )
     
     def _bind_keyboard(self) -> None:
-        """Bind keyboard events for quick input."""
         self.window.bind("<Key>", self._on_key_press)
-        # Bind specific keys that might need special handling
         self.window.bind("<Return>", lambda e: self._on_button_click("="))
         self.window.bind("<BackSpace>", lambda e: self._on_button_click("⌫"))
         self.window.bind("<Escape>", lambda e: self._on_button_click("C"))
-        # History navigation
         self.window.bind("<Up>", lambda e: self._navigate_history(-1))
         self.window.bind("<Down>", lambda e: self._navigate_history(1))
     
     def _on_key_press(self, event: tk.Event) -> None:
-        """Handle keyboard input events."""
         key = event.keysym if len(event.keysym) > 1 else event.char
         if key in self.KEY_BINDINGS:
             self._on_button_click(self.KEY_BINDINGS[key])
@@ -401,7 +287,6 @@ class Calculator:
             self._on_button_click(key)
     
     def _navigate_history(self, direction: int) -> None:
-        """Navigate through calculation history using arrow keys."""
         if not self.history:
             return
         
@@ -412,12 +297,6 @@ class Calculator:
             self.display_text.set(self.current_input)
     
     def _on_button_click(self, button_text: str) -> None:
-        """
-        Handle button click events and route to appropriate handler.
-        
-        Args:
-            button_text: The text/symbol of the clicked button.
-        """
         handlers: dict[str, Callable[[], None]] = {
             "C": self._clear,
             "=": self._calculate,
@@ -432,19 +311,16 @@ class Calculator:
             self._append_to_input(button_text)
     
     def _clear(self) -> None:
-        """Clear the current input and reset display."""
         self.current_input = ""
         self.display_text.set("0")
         self.history_text.set("")
         self.history_index = -1
     
     def _backspace(self) -> None:
-        """Remove the last character from input."""
         self.current_input = self.current_input[:-1]
         self.display_text.set(self.current_input if self.current_input else "0")
     
     def _toggle_sign(self) -> None:
-        """Toggle the sign of the current number (positive/negative)."""
         if not self.current_input or self.current_input == "0":
             return
         
@@ -456,7 +332,6 @@ class Calculator:
         self.display_text.set(self.current_input)
     
     def _percentage(self) -> None:
-        """Convert the current value to a percentage (divide by 100)."""
         if not self.current_input:
             return
         
@@ -469,22 +344,13 @@ class Calculator:
             pass
     
     def _append_to_input(self, char: str) -> None:
-        """
-        Append a character to the current input with validation.
-        
-        Args:
-            char: The character to append (number, operator, or decimal).
-        """
         operators = "÷×−+."
         
-        # Prevent consecutive operators
         if char in operators and self.current_input:
             if self.current_input[-1] in operators:
                 return
         
-        # Prevent multiple decimal points in same number
         if char == ".":
-            # Get the last number segment
             parts = self.current_input
             for op in "÷×−+":
                 parts = parts.replace(op, " ")
@@ -496,13 +362,11 @@ class Calculator:
         self.display_text.set(self.current_input)
     
     def _to_internal_format(self, expression: str) -> str:
-        """Convert display symbols to internal operator format."""
         for display_sym, internal_sym in self.SYMBOL_MAP.items():
             expression = expression.replace(display_sym, internal_sym)
         return expression
     
     def _calculate(self) -> None:
-        """Evaluate the current expression and display the result."""
         if not self.current_input:
             return
         
@@ -513,12 +377,10 @@ class Calculator:
             result = SafeExpressionEvaluator.evaluate(internal_expr)
             formatted = self._format_result(result)
             
-            # Update history
             self.history_text.set(f"{expression} =")
             self.history.append(expression)
             self.history_index = len(self.history)
             
-            # Update display
             self.current_input = str(result)
             self.display_text.set(formatted)
             
@@ -530,29 +392,15 @@ class Calculator:
             self.current_input = ""
     
     def _format_result(self, result: float) -> str:
-        """
-        Format the calculation result for display.
-        
-        Args:
-            result: The numerical result to format.
-            
-        Returns:
-            A formatted string representation.
-        """
-        # Remove unnecessary decimal places
         if isinstance(result, float) and result == int(result):
             return str(int(result))
         
-        # Limit decimal places for readability
         formatted = f"{result:.10g}"
         return formatted
     
     def run(self) -> None:
-        """Start the calculator application and center on screen."""
-        # Wait for window to be drawn
         self.window.update_idletasks()
         
-        # Calculate center position
         width = self.window.winfo_width()
         height = self.window.winfo_height()
         screen_width = self.window.winfo_screenwidth()
@@ -560,16 +408,10 @@ class Calculator:
         x = (screen_width // 2) - (width // 2)
         y = (screen_height // 2) - (height // 2)
         
-        # Position window
         self.window.geometry(f"{width}x{height}+{x}+{y}")
         
-        # Start event loop
         self.window.mainloop()
 
-
-# =============================================================================
-# ENTRY POINT
-# =============================================================================
 
 if __name__ == "__main__":
     calculator = Calculator()
