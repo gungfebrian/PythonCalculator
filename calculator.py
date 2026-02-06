@@ -5,7 +5,7 @@ from enum import Enum
 from typing import Optional, List, Callable
 import operator
 import re
-
+import
 
 @dataclass(frozen=True)
 class ThemeColors:
